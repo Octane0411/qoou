@@ -12,15 +12,18 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/docker/go-connections/nat"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 var ctx = context.Background()
 var cli *client.Client
+var forceStopDuration = (1 * time.Second)
 
 func init() {
 	cli, _ = client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
@@ -37,10 +40,28 @@ func PullGoImage() {
 }
 
 func DeployGoProjectToContainer(username, repoName string) {
-	resp, err := cli.ContainerCreate(ctx, &container.Config{
-		Image: "golang:1.18",
-		Cmd:   []string{"ls", "/home"},
-	}, nil, nil, nil, username+"-"+repoName)
+	cID, ok := GetContainerIDByName(username, repoName)
+	if ok {
+		err := cli.ContainerStop(ctx, cID, nil)
+		err = cli.ContainerRemove(ctx, cID, types.ContainerRemoveOptions{})
+		if err != nil {
+			log.Fatalln("err in remove container: ", err)
+		}
+	}
+
+	var resp, err = cli.ContainerCreate(ctx, &container.Config{
+		Cmd:          []string{"go", "run", "/home/" + repoName + "/main.go"},
+		Image:        "golang:1.18",
+		ExposedPorts: nat.PortSet{"9000": struct{}{}},
+	}, &container.HostConfig{
+		PortBindings: nat.PortMap{"9000": []nat.PortBinding{nat.PortBinding{
+			HostIP:   "127.0.0.1",
+			HostPort: "9000",
+		}}},
+	}, nil, nil, username+"-"+repoName)
+
+	fmt.Println(resp.ID)
+
 	if err != nil {
 		panic(err)
 	}
@@ -54,9 +75,18 @@ func DeployGoProjectToContainer(username, repoName string) {
 	})
 
 	if err := cli.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
+		cli.ContainerRemove(ctx, resp.ID, types.ContainerRemoveOptions{})
 		panic(err)
 	}
-	fmt.Println(resp.ID)
+
+	statusCh, errCh := cli.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
+	select {
+	case err := <-errCh:
+		if err != nil {
+			panic(err)
+		}
+	case <-statusCh:
+	}
 
 	out, err := cli.ContainerLogs(ctx, resp.ID, types.ContainerLogsOptions{ShowStdout: true})
 	if err != nil {
@@ -65,16 +95,6 @@ func DeployGoProjectToContainer(username, repoName string) {
 	stdcopy.StdCopy(os.Stdout, os.Stderr, out)
 
 	//cli.ContainerRemove(ctx, resp.ID, types.ContainerRemoveOptions{})
-
-	/*	statusCh, errCh := cli.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
-		select {
-		case err := <-errCh:
-			if err != nil {
-				panic(err)
-			}
-		case <-statusCh:
-		}
-	*/
 
 }
 
@@ -167,4 +187,27 @@ func NewTarArchiveFromPath(path string) (io.Reader, error) {
 		return nil, ok
 	}
 	return bufio.NewReader(&buf), nil
+}
+
+func GetContainerIDByName(username, repoName string) (string, bool) {
+	var cID string
+	containers, _ := cli.ContainerList(ctx, types.ContainerListOptions{
+		Quiet:   false,
+		Size:    false,
+		All:     true,
+		Latest:  false,
+		Since:   "",
+		Before:  "",
+		Limit:   0,
+		Filters: filters.Args{},
+	})
+	for _, container := range containers {
+		if container.Names[0] == "/"+username+"-"+repoName {
+			cID = container.ID
+		}
+	}
+	if cID == "" {
+		return "", false
+	}
+	return cID, true
 }

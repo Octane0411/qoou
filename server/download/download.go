@@ -3,7 +3,6 @@ package download
 import (
 	"archive/zip"
 	"fmt"
-	cp "github.com/otiai10/copy"
 	"io"
 	"log"
 	"net/http"
@@ -39,9 +38,11 @@ func DownloadRepo(username, repoName string) {
 		log.Fatal(err)
 	}
 	Unzip(downloadPath, repoPath)
-	cp.Copy(repoPath+"/"+repoName+"-main", repoPath)
+	//TODO:这里可以优化
+	//cp.Copy(repoPath+"/"+repoName+"-main", repoPath)
+	//os.RemoveAll(repoPath + "/" + repoName + "-main")
+	os.Rename(repoPath+"/"+repoName+"-main", repoPath+"/"+repoName)
 	os.Remove(downloadPath)
-	os.RemoveAll(repoPath + "/" + repoName + "-main")
 }
 
 func GetDownloadsDir() string {
