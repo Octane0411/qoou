@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/Octane0411/qoou/server/download"
 	"github.com/docker/docker/api/types"
@@ -23,7 +24,13 @@ import (
 
 var ctx = context.Background()
 var cli *client.Client
-var forceStopDuration = (1 * time.Second)
+var logsDuration = 5 * time.Second
+
+type ImageBuildResponse struct {
+	Aux struct {
+		ID string `json:"ID"`
+	} `json:"aux"`
+}
 
 func init() {
 	cli, _ = client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
@@ -39,6 +46,7 @@ func PullGoImage() {
 	io.Copy(os.Stdout, out)
 }
 
+// deprecated, use DeployWithDockerFile
 func DeployGoProjectToContainer(username, repoName string) {
 	cID, ok := GetContainerIDByName(username, repoName)
 	if ok {
@@ -50,6 +58,7 @@ func DeployGoProjectToContainer(username, repoName string) {
 	}
 
 	var resp, err = cli.ContainerCreate(ctx, &container.Config{
+
 		Cmd:          []string{"go", "run", "/home/" + repoName + "/main.go"},
 		Image:        "golang:1.18",
 		ExposedPorts: nat.PortSet{"9000": struct{}{}},
@@ -60,7 +69,7 @@ func DeployGoProjectToContainer(username, repoName string) {
 		}}},
 	}, nil, nil, username+"-"+repoName)
 
-	fmt.Println(resp.ID)
+	fmt.Printf("starting container: %v\n", resp.ID)
 
 	if err != nil {
 		panic(err)
@@ -79,6 +88,8 @@ func DeployGoProjectToContainer(username, repoName string) {
 		panic(err)
 	}
 
+	go CopyContainerLogs(resp.ID)
+
 	statusCh, errCh := cli.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
 	select {
 	case err := <-errCh:
@@ -87,12 +98,6 @@ func DeployGoProjectToContainer(username, repoName string) {
 		}
 	case <-statusCh:
 	}
-
-	out, err := cli.ContainerLogs(ctx, resp.ID, types.ContainerLogsOptions{ShowStdout: true})
-	if err != nil {
-		panic(err)
-	}
-	stdcopy.StdCopy(os.Stdout, os.Stderr, out)
 
 	//cli.ContainerRemove(ctx, resp.ID, types.ContainerRemoveOptions{})
 
@@ -210,4 +215,77 @@ func GetContainerIDByName(username, repoName string) (string, bool) {
 		return "", false
 	}
 	return cID, true
+}
+
+func CopyContainerLogs(cID string) {
+	//每隔一段时间读，并且从上次之后开始读
+	beginTime := time.Now()
+	//.Format("2006-01-02T15:04:05Z")
+	sinceTime := beginTime
+	for {
+		since := sinceTime.Format("2006-01-02T15:04:05")
+		time.Sleep(logsDuration)
+		copyContainerLogs(cID, since)
+		fmt.Println(time.Now().Format("2006-01-02T15:04:05"), " show since:", sinceTime.Format("2006-01-02T15:04:05"))
+		sinceTime = sinceTime.Add(logsDuration)
+	}
+}
+
+func copyContainerLogs(cID string, since string) {
+	out, err := cli.ContainerLogs(ctx, cID, types.ContainerLogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Since:      since,
+	})
+	if err != nil {
+		panic(err)
+	}
+	//io.Copy(os.Stdout, out)
+	stdcopy.StdCopy(os.Stdout, os.Stdin, out)
+}
+
+func CreateLogDir(username, repoName string) {
+
+}
+
+func CreateLogFile() {
+
+}
+
+func DeployWithDockerFile(username, repoName string) {
+	f, err := NewTarArchiveFromPath(download.GetRepoDir(username, repoName))
+	if err != nil {
+		panic(err)
+	}
+
+	resp, err := cli.ImageBuild(ctx, f, types.ImageBuildOptions{
+		Dockerfile: "Dockerfile",
+	})
+	var imageID string
+	imageBuildResponse := &ImageBuildResponse{}
+	reader := bufio.NewReader(resp.Body)
+	for {
+		line, err := reader.ReadBytes('\n')
+		if strings.EqualFold(string(line), "\n") {
+			continue
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			panic(err)
+		}
+		err = json.Unmarshal(line, imageBuildResponse)
+		fmt.Println(string(line))
+		if err == nil {
+			//imageID = strings.Split(imageBuildResponse.Aux.ID, ":")[1]
+			imageID = imageBuildResponse.Aux.ID
+		}
+	}
+
+	fmt.Println(imageID)
+	err = cli.ImageTag(ctx, imageID, username+"-"+repoName+":latest")
+	if err != nil {
+		panic(err)
+	}
 }
