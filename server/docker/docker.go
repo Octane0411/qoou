@@ -45,13 +45,10 @@ func PullImage(imageName string) {
 	io.Copy(os.Stdout, out)
 }
 
-func StartContainer(username, repoName string) {
-	cID, ok := GetCIDWithName(username, repoName)
+func StartContainer1(username, repoName string) {
+	cID, ok := GetContainerID(username, repoName)
 	if !ok {
 		logger.Logger.Error("容器不存在：", username+":"+repoName)
-	}
-	if cID == "" {
-		log.Fatalln("没有找到这个容器")
 	}
 
 	if err := cli.ContainerStart(ctx, cID, types.ContainerStartOptions{}); err != nil {
@@ -74,7 +71,7 @@ func StartContainer(username, repoName string) {
 	stdcopy.StdCopy(os.Stdout, os.Stderr, out)
 }
 
-func GetContainerIDByName(username, repoName string) (string, bool) {
+func GetContainerID(username, repoName string) (string, bool) {
 	var cID string
 	containers, _ := cli.ContainerList(ctx, types.ContainerListOptions{
 		Quiet:   false,
@@ -95,6 +92,19 @@ func GetContainerIDByName(username, repoName string) (string, bool) {
 		return "", false
 	}
 	return cID, true
+}
+func GetImageID(username, repoName string) (string, bool) {
+	var imageID string
+	images, _ := cli.ImageList(ctx, types.ImageListOptions{})
+	for _, image := range images {
+		if image.RepoTags[0] == username+":"+repoName {
+			imageID = image.ID
+		}
+	}
+	if imageID == "" {
+		return "", false
+	}
+	return imageID, true
 }
 
 func CopyContainerLogs(cID string) {
@@ -132,15 +142,36 @@ func CreateLogFile() {
 
 }
 
-func DeployWithDockerFile(username, repoName string) {
+func CreateImageWithDockerfile(username, repoName string) string {
 	f, err := util.NewTarArchiveFromPath(download.GetRepoDir(username, repoName))
 	if err != nil {
 		logger.Logger.Error(err)
 	}
+	projectName := GetImageName(username, repoName)
+	imageList, err := cli.ImageList(ctx, types.ImageListOptions{})
+	if err != nil {
+		logger.Logger.Error(err)
+	}
+
+	for _, image := range imageList {
+		if len(image.RepoTags) < 1 {
+			continue
+		}
+		if image.RepoTags[0] == projectName {
+			if _, err := cli.ImageRemove(ctx, image.ID, types.ImageRemoveOptions{}); err != nil {
+				logger.Logger.Error(err)
+			}
+		}
+	}
 
 	resp, err := cli.ImageBuild(ctx, f, types.ImageBuildOptions{
-		Dockerfile: "Dockerfile",
+		Tags:        []string{username + "-" + repoName + ":latest"},
+		NetworkMode: "host",
+		Dockerfile:  "Dockerfile",
 	})
+	if err != nil {
+		logger.Logger.Error(err)
+	}
 	var imageID string
 	imageBuildResponse := &ImageBuildResponse{}
 	reader := bufio.NewReader(resp.Body)
@@ -157,12 +188,40 @@ func DeployWithDockerFile(username, repoName string) {
 		}
 		err = json.Unmarshal(line, imageBuildResponse)
 		if err == nil {
-			//imageID = strings.Split(imageBuildResponse.Aux.ID, ":")[1]
 			imageID = imageBuildResponse.Aux.ID
 		}
 	}
-	err = cli.ImageTag(ctx, imageID, username+"-"+repoName+":latest")
+	//err = cli.ImageTag(ctx, imageID, username+"-"+repoName+":latest")
 	if err != nil {
+		logger.Logger.Error(err)
+	}
+	return imageID
+}
+func CreateAndStartContainer(username, repoName string) {
+	imageName := GetImageName(username, repoName)
+	var resp, err = cli.ContainerCreate(ctx, &container.Config{
+		Image: imageName,
+	}, &container.HostConfig{
+		PortBindings: nat.PortMap{"8080/tcp": []nat.PortBinding{{
+			HostIP:   "0.0.0.0",
+			HostPort: "8000",
+		}}},
+	}, nil, nil, username+"-"+repoName)
+	cID := resp.ID
+	if err := cli.ContainerStart(ctx, cID, types.ContainerStartOptions{}); err != nil {
+		logger.Logger.Error(err)
+	}
+	if err != nil {
+		logger.Logger.Error(err)
+	}
+}
+
+func StartContainer(username, repoName string) {
+	cID, ok := GetContainerID(username, repoName)
+	if !ok {
+		return
+	}
+	if err := cli.ContainerStart(ctx, cID, types.ContainerStartOptions{}); err != nil {
 		logger.Logger.Error(err)
 	}
 }
@@ -172,30 +231,13 @@ func DockerDaemonAlive() bool {
 	return err == nil
 }
 
-func GetCIDWithName(username string, repoName string) (string, bool) {
-	var cID string
-	containers, _ := cli.ContainerList(ctx, types.ContainerListOptions{
-		Quiet:   false,
-		Size:    false,
-		All:     true,
-		Latest:  false,
-		Since:   "",
-		Before:  "",
-		Limit:   0,
-		Filters: filters.Args{},
-	})
-	for _, container := range containers {
-		if container.Names[0] == "/"+username+"-"+repoName {
-			cID = container.ID
-			return cID, true
-		}
-	}
-	return "", false
+func GetImageName(username string, repoName string) string {
+	return username + "-" + repoName + ":" + "latest"
 }
 
-// deprecated, use DeployWithDockerFile
+// deprecated, use CreateImageWithDockerfile
 func DeployGoProjectToContainer(username, repoName string) {
-	cID, ok := GetContainerIDByName(username, repoName)
+	cID, ok := GetContainerID(username, repoName)
 	if ok {
 		err := cli.ContainerStop(ctx, cID, nil)
 		err = cli.ContainerRemove(ctx, cID, types.ContainerRemoveOptions{})

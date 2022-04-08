@@ -13,3 +13,12 @@ func FindUser(username string) bool {
 	}
 	return true
 }
+
+func GetToken(username string) (string, error) {
+	user := &model.User{}
+	err := db.DB.Where("username = ?", username).First(&user).Error
+	if err != nil {
+		return "", err
+	}
+	return user.Token, nil
+}

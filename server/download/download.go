@@ -16,8 +16,8 @@ func DownloadRepo(username, repoName string) {
 	u := "https://github.com/" + username + "/" + repoName + "/archive/refs/heads/main.zip"
 
 	//创建路径
-	os.MkdirAll(GetDownloadsDir()+"/"+username+"/"+repoName, os.ModePerm)
-	repoPath := filepath.Join(GetDownloadsDir(), username, repoName)
+	os.MkdirAll(GetDownloadsDir()+"/"+username, os.ModePerm)
+	repoPath := filepath.Join(GetDownloadsDir(), username)
 	//得到要下载文件的path
 	downloadPath := filepath.Join(repoPath, "tmp.zip")
 	//创建文件
@@ -44,7 +44,6 @@ func DownloadRepo(username, repoName string) {
 	os.Rename(repoPath+"/"+repoName+"-main", repoPath+"/"+repoName)
 	os.Remove(downloadPath)
 }
-
 func GetDownloadsDir() string {
 	exe, err := os.Executable()
 	if err != nil {
@@ -56,7 +55,6 @@ func GetDownloadsDir() string {
 func GetRepoDir(username string, repoName string) string {
 	return filepath.Join(GetDownloadsDir(), username, repoName)
 }
-
 func Unzip(src, dest string) error {
 	r, err := zip.OpenReader(src)
 	if err != nil {
