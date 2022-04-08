@@ -55,6 +55,7 @@ func Deploy(c *gin.Context) {
 	b, _ := io.ReadAll(resp.Body)
 	gResp := GitHubCommitResponse{}
 	err = json.Unmarshal(b, &gResp)
+	logger.Logger.Infoln(string(b))
 	if err != nil {
 		logger.Logger.Error(err)
 		c.JSON(500, gin.H{
@@ -63,6 +64,8 @@ func Deploy(c *gin.Context) {
 	}
 	if len(gResp) < 1 {
 		// no update
+		logger.Logger.Info("no update")
+		//TODO:检查是否有异常，比如有image却没有container
 		docker.StartContainer(request.Username, request.RepoName)
 	} else {
 		lastCommit := gResp[0].Commit.Committer.Date
@@ -80,11 +83,21 @@ func Deploy(c *gin.Context) {
 		}
 		// Download latest project
 		download.DownloadRepo(request.Username, request.RepoName)
-		docker.CreateImageWithDockerfile(request.Username, request.RepoName)
-		docker.CreateAndStartContainer(request.Username, request.RepoName)
+		imageID := docker.CreateImageWithDockerfile(request.Username, request.RepoName)
+		containerID := docker.CreateAndStartContainer(request.Username, request.RepoName)
+		project.ImageID = imageID
+		project.ContainerID = containerID
+		err = dao.UpdateProject(project)
+		if err != nil {
+			logger.Logger.Error(err)
+			c.JSON(500, gin.H{
+				"message": "write db error",
+			})
+			return
+		}
 	}
 	// write db lastDeploy
-	project.LastDeploy = time.Now()
+	project.LastRun = time.Now()
 	err = dao.UpdateProject(project)
 	if err != nil {
 		logger.Logger.Error(err)
@@ -99,6 +112,8 @@ func Deploy(c *gin.Context) {
 }
 
 func GetGitHubCommitsRequest(username, repoName string, lastCommit time.Time) *http.Request {
+	lastCommit.Add(time.Hour * -8)
 	req, _ := http.NewRequest("GET", "https://api.github.com/repos/"+username+"/"+repoName+"/commits?since="+lastCommit.Format("2006-01-02T15:01:05"), nil)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	return req
 }

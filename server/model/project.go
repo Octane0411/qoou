@@ -12,7 +12,7 @@ type Project struct {
 	Status      string    `json:"status"`
 	Address     string    `json:"address"`
 	LastCommit  time.Time `json:"lastCommit"`
-	LastDeploy  time.Time `json:"lastDeploy"`
+	LastRun     time.Time `json:"lastRun"`
 	ContainerID string    `json:"containerID" gorm:"column:container_id"`
 	ImageID     string    `json:"imageID" gorm:"column:image_id"`
 	*gorm.Model

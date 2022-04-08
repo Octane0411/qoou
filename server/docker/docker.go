@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/Octane0411/qoou/common/logger"
+	"github.com/Octane0411/qoou/server/dao"
 	"github.com/Octane0411/qoou/server/download"
 	"github.com/Octane0411/qoou/util"
 	"github.com/docker/docker/api/types"
@@ -17,6 +18,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -43,32 +45,6 @@ func PullImage(imageName string) {
 	}
 	defer out.Close()
 	io.Copy(os.Stdout, out)
-}
-
-func StartContainer1(username, repoName string) {
-	cID, ok := GetContainerID(username, repoName)
-	if !ok {
-		logger.Logger.Error("容器不存在：", username+":"+repoName)
-	}
-
-	if err := cli.ContainerStart(ctx, cID, types.ContainerStartOptions{}); err != nil {
-		logger.Logger.Error(err)
-	}
-
-	statusCh, errCh := cli.ContainerWait(ctx, cID, container.WaitConditionNotRunning)
-	select {
-	case err := <-errCh:
-		if err != nil {
-			logger.Logger.Error(err)
-		}
-	case <-statusCh:
-	}
-
-	out, err := cli.ContainerLogs(ctx, cID, types.ContainerLogsOptions{ShowStdout: true})
-	if err != nil {
-		logger.Logger.Error(err)
-	}
-	stdcopy.StdCopy(os.Stdout, os.Stderr, out)
 }
 
 func GetContainerID(username, repoName string) (string, bool) {
@@ -134,14 +110,6 @@ func copyContainerLogs(cID string, since string) {
 	stdcopy.StdCopy(os.Stdout, os.Stdin, out)
 }
 
-func CreateLogDir(username, repoName string) {
-
-}
-
-func CreateLogFile() {
-
-}
-
 func CreateImageWithDockerfile(username, repoName string) string {
 	f, err := util.NewTarArchiveFromPath(download.GetRepoDir(username, repoName))
 	if err != nil {
@@ -197,31 +165,56 @@ func CreateImageWithDockerfile(username, repoName string) string {
 	}
 	return imageID
 }
-func CreateAndStartContainer(username, repoName string) {
+func CreateAndStartContainer(username, repoName string) string {
 	imageName := GetImageName(username, repoName)
-	var resp, err = cli.ContainerCreate(ctx, &container.Config{
+
+	// generate a free port
+	freePort, err := util.GetFreePort()
+	if err != nil {
+		logger.Logger.Error(err)
+	}
+	port := strconv.Itoa(freePort)
+	// write to redis
+	err = dao.SetPort(port, username, repoName)
+	if err != nil {
+		logger.Logger.Error(err)
+	}
+
+	resp, err := cli.ContainerCreate(ctx, &container.Config{
 		Image: imageName,
 	}, &container.HostConfig{
 		PortBindings: nat.PortMap{"8080/tcp": []nat.PortBinding{{
 			HostIP:   "0.0.0.0",
-			HostPort: "8000",
+			HostPort: port,
 		}}},
 	}, nil, nil, username+"-"+repoName)
-	cID := resp.ID
-	if err := cli.ContainerStart(ctx, cID, types.ContainerStartOptions{}); err != nil {
-		logger.Logger.Error(err)
-	}
 	if err != nil {
 		logger.Logger.Error(err)
 	}
+
+	cID := resp.ID
+	if err = cli.ContainerStart(ctx, cID, types.ContainerStartOptions{}); err != nil {
+		logger.Logger.Error(err)
+	}
+	return cID
 }
 
 func StartContainer(username, repoName string) {
 	cID, ok := GetContainerID(username, repoName)
 	if !ok {
+		logger.Logger.Error("容器不存在")
 		return
 	}
 	if err := cli.ContainerStart(ctx, cID, types.ContainerStartOptions{}); err != nil {
+		logger.Logger.Error(err)
+	}
+}
+func StopContainer(username, repoName string) {
+	cID, ok := GetContainerID(username, repoName)
+	if !ok {
+		return
+	}
+	if err := cli.ContainerStop(ctx, cID, nil); err != nil {
 		logger.Logger.Error(err)
 	}
 }
@@ -233,6 +226,14 @@ func DockerDaemonAlive() bool {
 
 func GetImageName(username string, repoName string) string {
 	return username + "-" + repoName + ":" + "latest"
+}
+
+func CreateLogDir(username, repoName string) {
+
+}
+
+func CreateLogFile() {
+
 }
 
 // deprecated, use CreateImageWithDockerfile
@@ -290,4 +291,31 @@ func DeployGoProjectToContainer(username, repoName string) {
 
 	//cli.ContainerRemove(ctx, resp.ID, types.ContainerRemoveOptions{})
 
+}
+
+// deprecated
+func StartContainer1(username, repoName string) {
+	cID, ok := GetContainerID(username, repoName)
+	if !ok {
+		logger.Logger.Error("容器不存在：", username+":"+repoName)
+	}
+
+	if err := cli.ContainerStart(ctx, cID, types.ContainerStartOptions{}); err != nil {
+		logger.Logger.Error(err)
+	}
+
+	statusCh, errCh := cli.ContainerWait(ctx, cID, container.WaitConditionNotRunning)
+	select {
+	case err := <-errCh:
+		if err != nil {
+			logger.Logger.Error(err)
+		}
+	case <-statusCh:
+	}
+
+	out, err := cli.ContainerLogs(ctx, cID, types.ContainerLogsOptions{ShowStdout: true})
+	if err != nil {
+		logger.Logger.Error(err)
+	}
+	stdcopy.StdCopy(os.Stdout, os.Stderr, out)
 }
