@@ -1,12 +1,14 @@
 package v1
 
 import (
+	"bufio"
 	"encoding/json"
 	"github.com/Octane0411/qoou/common/logger"
 	"github.com/Octane0411/qoou/server/dao"
 	"github.com/Octane0411/qoou/server/docker"
 	"github.com/Octane0411/qoou/server/download"
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 	"io"
 	"net/http"
 	"time"
@@ -119,9 +121,20 @@ func Deploy(c *gin.Context) {
 
 func GetProjectsByUsername(c *gin.Context) {
 	username := c.Query("username")
+	repoName := c.Query("repoName")
+	if repoName != "" {
+		project, err := dao.GetProject(username, repoName)
+		if err != nil {
+			c.JSON(500, gin.H{"msg": "db error"})
+			return
+		}
+		c.JSON(200, gin.H{"msg": "success", "data": project})
+		return
+	}
 	projects, err := dao.GetProjectByUsername(username)
 	if err != nil {
-		c.JSON(500, gin.H{"msg": "write db error"})
+		c.JSON(500, gin.H{"msg": "db error"})
+		return
 	}
 	c.JSON(200, gin.H{"msg": "success", "data": projects})
 }
@@ -133,6 +146,7 @@ func StartContainer(c *gin.Context) {
 	if err != nil {
 		logger.Logger.Error("error start container:", err)
 		c.JSON(500, gin.H{"msg": "error"})
+		return
 	}
 	c.JSON(200, gin.H{"msg": "success"})
 }
@@ -144,8 +158,50 @@ func StopContainer(c *gin.Context) {
 	if err != nil {
 		logger.Logger.Error("error start container:", err)
 		c.JSON(500, gin.H{"msg": "error"})
+		return
 	}
 	c.JSON(200, gin.H{"msg": "success"})
+}
+
+func GetLog(c *gin.Context) {
+	username := c.Query("username")
+	repoName := c.Query("repoName")
+	getLog(c.Writer, c.Request, username, repoName)
+}
+
+func getLog(w http.ResponseWriter, r *http.Request, username, repoName string) {
+	cID, ok := docker.GetContainerID(username, repoName)
+	if !ok {
+		logger.Logger.Error("容器不存在")
+	}
+	logsReader := docker.ContainerLogs(cID)
+	var upgrader = websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			return true
+		},
+	}
+	c, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		logger.Logger.Error("upgrade:", err)
+		return
+	}
+	defer c.Close()
+	//ticker := time.NewTicker(1 * time.Second)
+	//defer ticker.Stop()
+	reader := bufio.NewReader(logsReader)
+	for {
+		line, _, err := reader.ReadLine()
+		if err != nil {
+			logger.Logger.Error(err)
+			break
+		}
+		err = c.WriteMessage(1, line)
+		if err != nil {
+			logger.Logger.Error("write: ", err)
+			break
+		}
+
+	}
 }
 
 func GetGitHubCommitsRequest(username, repoName string, lastCommit time.Time) *http.Request {

@@ -114,6 +114,19 @@ func copyContainerLogs(cID string, since string) {
 	stdcopy.StdCopy(os.Stdout, os.Stdin, out)
 }
 
+func ContainerLogs(cID string) io.ReadCloser {
+	logsReader, err := cli.ContainerLogs(ctx, cID, types.ContainerLogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Follow:     true,
+		Tail:       "50",
+	})
+	if err != nil {
+		logger.Logger.Error(err)
+	}
+	return logsReader
+}
+
 func CreateImageWithDockerfile(username, repoName string) string {
 	f, err := util.NewTarArchiveFromPath(download.GetRepoDir(username, repoName))
 	if err != nil {
@@ -233,14 +246,6 @@ func DockerDaemonAlive() bool {
 
 func GetImageName(username string, repoName string) string {
 	return username + "-" + repoName + ":" + "latest"
-}
-
-func CreateLogDir(username, repoName string) {
-
-}
-
-func CreateLogFile() {
-
 }
 
 func GenerateDockerfile(project *model.Project) error {
