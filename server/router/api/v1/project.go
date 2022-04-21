@@ -29,6 +29,7 @@ type GitHubCommitResponse []GitHubCommit
 func Deploy(c *gin.Context) {
 	// require: username, repoName
 	var request DeployRequest
+	var imageID, containerID string
 	err := c.BindJSON(&request)
 	if err != nil {
 		c.JSON(400, gin.H{
@@ -55,7 +56,6 @@ func Deploy(c *gin.Context) {
 	b, _ := io.ReadAll(resp.Body)
 	gResp := GitHubCommitResponse{}
 	err = json.Unmarshal(b, &gResp)
-	logger.Logger.Infoln(string(b))
 	if err != nil {
 		logger.Logger.Error(err)
 		c.JSON(500, gin.H{
@@ -66,7 +66,15 @@ func Deploy(c *gin.Context) {
 		// no update
 		logger.Logger.Info("no update")
 		//TODO:检查是否有异常，比如有image却没有container
-		docker.StartContainer(request.Username, request.RepoName)
+		err = docker.StartContainer(request.Username, request.RepoName)
+		if err != nil {
+			err = docker.GenerateDockerfile(project)
+			if err != nil {
+				c.JSON(500, gin.H{"msg": "error"})
+			}
+			imageID = docker.CreateImageWithDockerfile(request.Username, request.RepoName)
+			containerID = docker.CreateAndStartContainer(request.Username, request.RepoName)
+		}
 	} else {
 		lastCommit := gResp[0].Commit.Committer.Date
 		// update
@@ -83,21 +91,19 @@ func Deploy(c *gin.Context) {
 		}
 		// Download latest project
 		download.DownloadRepo(request.Username, request.RepoName)
-		imageID := docker.CreateImageWithDockerfile(request.Username, request.RepoName)
-		containerID := docker.CreateAndStartContainer(request.Username, request.RepoName)
-		project.ImageID = imageID
-		project.ContainerID = containerID
-		err = dao.UpdateProject(project)
+		err = docker.GenerateDockerfile(project)
 		if err != nil {
-			logger.Logger.Error(err)
-			c.JSON(500, gin.H{
-				"message": "write db error",
-			})
-			return
+			c.JSON(500, gin.H{"msg": "error"})
 		}
+		imageID = docker.CreateImageWithDockerfile(request.Username, request.RepoName)
+		containerID = docker.CreateAndStartContainer(request.Username, request.RepoName)
+
 	}
 	// write db lastDeploy
 	project.LastRun = time.Now()
+	project.ImageID = imageID
+	project.ContainerID = containerID
+	project.Status = "running"
 	err = dao.UpdateProject(project)
 	if err != nil {
 		logger.Logger.Error(err)
@@ -109,6 +115,37 @@ func Deploy(c *gin.Context) {
 	c.JSON(200, gin.H{
 		"message": "success deploy",
 	})
+}
+
+func GetProjectsByUsername(c *gin.Context) {
+	username := c.Query("username")
+	projects, err := dao.GetProjectByUsername(username)
+	if err != nil {
+		c.JSON(500, gin.H{"msg": "write db error"})
+	}
+	c.JSON(200, gin.H{"msg": "success", "data": projects})
+}
+
+func StartContainer(c *gin.Context) {
+	username := c.Query("username")
+	repoName := c.Query("repoName")
+	err := docker.StartContainer(username, repoName)
+	if err != nil {
+		logger.Logger.Error("error start container:", err)
+		c.JSON(500, gin.H{"msg": "error"})
+	}
+	c.JSON(200, gin.H{"msg": "success"})
+}
+
+func StopContainer(c *gin.Context) {
+	username := c.Query("username")
+	repoName := c.Query("repoName")
+	err := docker.StopContainer(username, repoName)
+	if err != nil {
+		logger.Logger.Error("error start container:", err)
+		c.JSON(500, gin.H{"msg": "error"})
+	}
+	c.JSON(200, gin.H{"msg": "success"})
 }
 
 func GetGitHubCommitsRequest(username, repoName string, lastCommit time.Time) *http.Request {

@@ -29,3 +29,12 @@ func UpdateProject(project *model.Project) error {
 	}
 	return nil
 }
+
+func GetProjectByUsername(username string) ([]model.Project, error) {
+	var projects []model.Project
+	err := db.DB.Where("username = ?", username).Find(&projects).Error
+	if err != nil {
+		return nil, err
+	}
+	return projects, nil
+}

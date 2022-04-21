@@ -4,10 +4,13 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/Octane0411/qoou/common/global"
 	"github.com/Octane0411/qoou/common/logger"
 	"github.com/Octane0411/qoou/server/dao"
 	"github.com/Octane0411/qoou/server/download"
+	"github.com/Octane0411/qoou/server/model"
 	"github.com/Octane0411/qoou/util"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -20,6 +23,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"text/template"
 	"time"
 )
 
@@ -131,7 +135,6 @@ func CreateImageWithDockerfile(username, repoName string) string {
 			}
 		}
 	}
-
 	resp, err := cli.ImageBuild(ctx, f, types.ImageBuildOptions{
 		Tags:        []string{username + "-" + repoName + ":latest"},
 		NetworkMode: "host",
@@ -157,6 +160,7 @@ func CreateImageWithDockerfile(username, repoName string) string {
 		err = json.Unmarshal(line, imageBuildResponse)
 		if err == nil {
 			imageID = imageBuildResponse.Aux.ID
+			logger.Logger.Info("imageID:", imageID)
 		}
 	}
 	//err = cli.ImageTag(ctx, imageID, username+"-"+repoName+":latest")
@@ -167,7 +171,6 @@ func CreateImageWithDockerfile(username, repoName string) string {
 }
 func CreateAndStartContainer(username, repoName string) string {
 	imageName := GetImageName(username, repoName)
-
 	// generate a free port
 	freePort, err := util.GetFreePort()
 	if err != nil {
@@ -189,7 +192,7 @@ func CreateAndStartContainer(username, repoName string) string {
 		}}},
 	}, nil, nil, username+"-"+repoName)
 	if err != nil {
-		logger.Logger.Error(err)
+		logger.Logger.Error("image create:", err)
 	}
 
 	cID := resp.ID
@@ -199,24 +202,28 @@ func CreateAndStartContainer(username, repoName string) string {
 	return cID
 }
 
-func StartContainer(username, repoName string) {
+func StartContainer(username, repoName string) error {
 	cID, ok := GetContainerID(username, repoName)
 	if !ok {
-		logger.Logger.Error("容器不存在")
-		return
+		return fmt.Errorf("容器不存在")
 	}
-	if err := cli.ContainerStart(ctx, cID, types.ContainerStartOptions{}); err != nil {
+	err := cli.ContainerStart(ctx, cID, types.ContainerStartOptions{})
+	if err != nil {
 		logger.Logger.Error(err)
 	}
+	return err
 }
-func StopContainer(username, repoName string) {
+
+func StopContainer(username, repoName string) error {
 	cID, ok := GetContainerID(username, repoName)
 	if !ok {
-		return
+		return fmt.Errorf("容器不存在")
 	}
-	if err := cli.ContainerStop(ctx, cID, nil); err != nil {
+	err := cli.ContainerStop(ctx, cID, nil)
+	if err != nil {
 		logger.Logger.Error(err)
 	}
+	return err
 }
 
 func DockerDaemonAlive() bool {
@@ -234,6 +241,60 @@ func CreateLogDir(username, repoName string) {
 
 func CreateLogFile() {
 
+}
+
+func GenerateDockerfile(project *model.Project) error {
+	projectDir := download.GetRepoDir(project.Username, project.RepoName)
+	dockerfileDir := projectDir + "/Dockerfile"
+	ok := FileExsits(dockerfileDir)
+	if ok {
+		//Dockerfile存在
+
+	} else {
+		//Dockerfile不存在
+		file, err := CreateFile(dockerfileDir)
+		if err != nil {
+			return err
+		}
+		dockerfileTemplate, err := GetDockerfileTemplate(project.Template)
+		if err != nil {
+			return err
+		}
+		dockerfileTemplate.Execute(file, project)
+	}
+	return nil
+}
+
+func CreateFile(dir string) (*os.File, error) {
+	//file, err := os.OpenFile(dir, os.O_CREATE, os.ModePerm)
+	f, err := os.Create(dir)
+	if err != nil {
+		logger.Logger.Error("error on create file", err)
+		return nil, err
+	}
+	return f, nil
+}
+
+func FileExsits(dir string) bool {
+	if _, err := os.Stat(dir); err == nil {
+		// path/to/whatever exists
+		return true
+	} else if errors.Is(err, os.ErrNotExist) {
+		// path/to/whatever does *not* exist
+		return false
+	} else {
+		// Schrodinger: file may or may not exist. See err for details.
+		// Therefore, do *NOT* use !os.IsNotExist(err) to test for file existence
+		panic(err)
+	}
+}
+
+func GetDockerfileTemplate(templ string) (*template.Template, error) {
+	t, err := template.New(templ).Parse(global.TemplateDockerfilemap[templ])
+	if err != nil {
+		return nil, err
+	}
+	return t, nil
 }
 
 // deprecated, use CreateImageWithDockerfile

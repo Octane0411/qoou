@@ -3,6 +3,7 @@ package download
 import (
 	"archive/zip"
 	"fmt"
+	"github.com/Octane0411/qoou/common/logger"
 	"io"
 	"log"
 	"net/http"
@@ -14,7 +15,7 @@ import (
 func DownloadRepo(username, repoName string) {
 	//https://github.com/Octane0411/qoou/archive/refs/heads/main.zip
 	u := "https://github.com/" + username + "/" + repoName + "/archive/refs/heads/main.zip"
-
+	logger.Logger.Debugln(u)
 	//创建路径
 	os.MkdirAll(GetDownloadsDir()+"/"+username, os.ModePerm)
 	repoPath := filepath.Join(GetDownloadsDir(), username)
