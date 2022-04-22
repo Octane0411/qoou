@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -185,23 +186,70 @@ func getLog(w http.ResponseWriter, r *http.Request, username, repoName string) {
 		logger.Logger.Error("upgrade:", err)
 		return
 	}
-	defer c.Close()
-	//ticker := time.NewTicker(1 * time.Second)
-	//defer ticker.Stop()
-	reader := bufio.NewReader(logsReader)
-	for {
-		line, _, err := reader.ReadLine()
-		if err != nil {
-			logger.Logger.Error(err)
-			break
-		}
-		err = c.WriteMessage(1, line)
-		if err != nil {
-			logger.Logger.Error("write: ", err)
-			break
-		}
 
-	}
+	done := make(chan struct{}, 1)
+	defer close(done)
+
+	//reader := bufio.NewReader(logsReader)
+	scanner := bufio.NewScanner(logsReader)
+	scanner.Split(bufio.ScanLines)
+
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+	// 写goroutine
+	go func() {
+		output := make(chan interface{})
+		//单独开启一个goroutine，因为scanner.Scan()会阻塞，不能放在for select的default中，否则会一直阻塞
+		//TODO: 这个goroutine会泄漏
+		go func() {
+			for scanner.Scan() {
+				output <- scanner.Bytes()
+			}
+			output <- scanner.Err()
+		}()
+		for {
+			select {
+			case <-done:
+				wg.Done()
+				return
+			case lineOrErr := <-output:
+				if line, ok := lineOrErr.([]byte); ok {
+					// 向websocket写入
+					err = c.WriteMessage(1, line)
+					if err != nil {
+						logger.Logger.Error("write: ", err)
+						break
+					}
+				} else {
+					err, ok := lineOrErr.(error)
+					if ok {
+						logger.Logger.Error(err)
+					}
+				}
+			}
+		}
+	}()
+	// 读goroutine
+	go func() {
+		for {
+			_, data, err := c.ReadMessage()
+			if err != nil {
+				logger.Logger.Error(err)
+				break
+			}
+			if string(data) == "end" {
+				err := c.Close()
+				if err != nil {
+					logger.Logger.Error(err)
+				}
+				done <- struct{}{}
+				wg.Done()
+				return
+			}
+		}
+	}()
+	wg.Wait()
+	logger.Logger.Info("doneeeeee")
 }
 
 func GetGitHubCommitsRequest(username, repoName string, lastCommit time.Time) *http.Request {
