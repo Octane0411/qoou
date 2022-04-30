@@ -15,19 +15,7 @@ import (
 	"time"
 )
 
-type DeployRequest struct {
-	Username string `json:"username"`
-	RepoName string `json:"repoName"`
-}
-
-type GitHubCommit struct {
-	Commit struct {
-		Committer struct {
-			Date time.Time `json:"date"`
-		} `json:"committer"`
-	} `json:"commit"`
-}
-type GitHubCommitResponse []GitHubCommit
+var host = "http://localhost:8080/preview"
 
 func Deploy(c *gin.Context) {
 	// require: username, repoName
@@ -68,7 +56,6 @@ func Deploy(c *gin.Context) {
 	if len(gResp) < 1 {
 		// no update
 		logger.Logger.Info("no update")
-		//TODO:检查是否有异常，比如有image却没有container
 		err = docker.StartContainer(request.Username, request.RepoName)
 		if err != nil {
 			err = docker.GenerateDockerfile(project)
@@ -76,7 +63,7 @@ func Deploy(c *gin.Context) {
 				c.JSON(500, gin.H{"msg": "error"})
 			}
 			imageID = docker.CreateImageWithDockerfile(request.Username, request.RepoName)
-			containerID = docker.CreateAndStartContainer(request.Username, request.RepoName)
+			containerID, _ = docker.CreateAndStartContainer(request.Username, request.RepoName)
 		}
 	} else {
 		lastCommit := gResp[0].Commit.Committer.Date
@@ -99,10 +86,11 @@ func Deploy(c *gin.Context) {
 			c.JSON(500, gin.H{"msg": "error"})
 		}
 		imageID = docker.CreateImageWithDockerfile(request.Username, request.RepoName)
-		containerID = docker.CreateAndStartContainer(request.Username, request.RepoName)
+		containerID, _ = docker.CreateAndStartContainer(request.Username, request.RepoName)
 
 	}
 	// write db lastDeploy
+	project.Address = host + "/" + project.Username + "/" + project.RepoName + "/"
 	project.LastRun = time.Now()
 	project.ImageID = imageID
 	project.ContainerID = containerID
@@ -143,7 +131,21 @@ func GetProjectsByUsername(c *gin.Context) {
 func StartContainer(c *gin.Context) {
 	username := c.Query("username")
 	repoName := c.Query("repoName")
-	err := docker.StartContainer(username, repoName)
+
+	project, err := dao.GetProject(username, repoName)
+	if err != nil {
+		c.JSON(500, gin.H{"msg": "db error"})
+		return
+	}
+	project.LastRun = time.Now()
+	project.Status = "running"
+	err = dao.UpdateProject(project)
+	if err != nil {
+		c.JSON(500, gin.H{"msg": "db error"})
+		return
+	}
+
+	err = docker.StartContainer(username, repoName)
 	if err != nil {
 		logger.Logger.Error("error start container:", err)
 		c.JSON(500, gin.H{"msg": "error"})
@@ -155,7 +157,21 @@ func StartContainer(c *gin.Context) {
 func StopContainer(c *gin.Context) {
 	username := c.Query("username")
 	repoName := c.Query("repoName")
-	err := docker.StopContainer(username, repoName)
+
+	project, err := dao.GetProject(username, repoName)
+	if err != nil {
+		c.JSON(500, gin.H{"msg": "db error"})
+		return
+	}
+	project.LastRun = time.Now()
+	project.Status = "stop"
+	err = dao.UpdateProject(project)
+	if err != nil {
+		c.JSON(500, gin.H{"msg": "db error"})
+		return
+	}
+
+	err = docker.StopContainer(username, repoName)
 	if err != nil {
 		logger.Logger.Error("error start container:", err)
 		c.JSON(500, gin.H{"msg": "error"})
@@ -200,7 +216,6 @@ func getLog(w http.ResponseWriter, r *http.Request, username, repoName string) {
 	go func() {
 		output := make(chan interface{})
 		//单独开启一个goroutine，因为scanner.Scan()会阻塞，不能放在for select的default中，否则会一直阻塞
-		//TODO: 这个goroutine会泄漏
 		go func() {
 			for scanner.Scan() {
 				output <- scanner.Bytes()
@@ -244,17 +259,11 @@ func getLog(w http.ResponseWriter, r *http.Request, username, repoName string) {
 				}
 				done <- struct{}{}
 				wg.Done()
+				logsReader.Close()
 				return
 			}
 		}
 	}()
 	wg.Wait()
 	logger.Logger.Info("doneeeeee")
-}
-
-func GetGitHubCommitsRequest(username, repoName string, lastCommit time.Time) *http.Request {
-	lastCommit.Add(time.Hour * -8)
-	req, _ := http.NewRequest("GET", "https://api.github.com/repos/"+username+"/"+repoName+"/commits?since="+lastCommit.Format("2006-01-02T15:01:05"), nil)
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	return req
 }

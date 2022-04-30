@@ -12,7 +12,7 @@ import (
 	"strconv"
 )
 
-func CreateAndStartContainer(username, repoName string) string {
+func CreateAndStartContainer(username, repoName string) (string, string) {
 	imageName := GetImageName(username, repoName)
 	// generate a free port
 	freePort, err := util.GetFreePort()
@@ -42,7 +42,7 @@ func CreateAndStartContainer(username, repoName string) string {
 	if err = cli.ContainerStart(ctx, cID, types.ContainerStartOptions{}); err != nil {
 		logger.Logger.Error(err)
 	}
-	return cID
+	return cID, port
 }
 
 func StartContainer(username, repoName string) error {
@@ -90,4 +90,9 @@ func GetContainerID(username, repoName string) (string, bool) {
 		return "", false
 	}
 	return cID, true
+}
+
+func RemoveContainer(cID string) error {
+	err := cli.ContainerRemove(ctx, cID, types.ContainerRemoveOptions{})
+	return err
 }

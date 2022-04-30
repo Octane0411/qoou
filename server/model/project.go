@@ -17,3 +17,7 @@ type Project struct {
 	ImageID     string    `json:"imageID" gorm:"column:image_id"`
 	*gorm.Model
 }
+
+func (project Project) TableName() string {
+	return "projects"
+}

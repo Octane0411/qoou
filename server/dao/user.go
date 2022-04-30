@@ -22,3 +22,8 @@ func GetToken(username string) (string, error) {
 	}
 	return user.Token, nil
 }
+
+func Create(user *model.User) error {
+	db.DB.Create(user)
+	return nil
+}

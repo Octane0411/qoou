@@ -2,4 +2,13 @@ Server:
   Port: 8080
 DataBase:
   Dsn: root:123456@tcp(127.0.0.1:3305)/qoou?charset=utf8mb4&parseTime=True&loc=Local
+Redis:
+  Addr: 127.0.0.1:6378
+  Password:
+  DB: 0
 Docker:
+Email:
+  ServerHost: smtp.yeah.net
+  ServerPort: 465
+  FromEmail: qoou_no_reply@yeah.net
+  FromPassword: OHOPJTVNYUOBFJHH

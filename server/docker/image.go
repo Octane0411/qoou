@@ -101,3 +101,8 @@ func CreateImageWithDockerfile(username, repoName string) string {
 func GetImageName(username string, repoName string) string {
 	return username + "-" + repoName + ":" + "latest"
 }
+
+func RemoveImage(iID string) error {
+	_, err := cli.ImageRemove(ctx, iID, types.ImageRemoveOptions{})
+	return err
+}

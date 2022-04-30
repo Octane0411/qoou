@@ -57,7 +57,7 @@ func fileExsits(dir string) bool {
 }
 
 func GetDockerfileTemplate(templ string) (*template.Template, error) {
-	t, err := template.New(templ).Parse(global.TemplateDockerfilemap[templ])
+	t, err := template.New(templ).Parse(global.TemplateDockerfileMap[templ])
 	if err != nil {
 		return nil, err
 	}

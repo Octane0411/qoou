@@ -9,6 +9,8 @@ import (
 
 var ServerSetting *ServerSettingS
 
+var EmailSetting *EmailSettingS
+
 func setupSetting() {
 	setting, err := NewSetting()
 	if err != nil {

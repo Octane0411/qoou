@@ -15,7 +15,7 @@ func NewRouter() *gin.Engine {
 	apiv1 := r.Group("/api/v1")
 
 	{
-		apiv1.POST("/register", v1.RegisterWithGitHubToken)
+		apiv1.POST("/github_token", v1.GitHubToken)
 
 		apiv1.POST("/repo", v1.CreateRepoWithTemplate)
 

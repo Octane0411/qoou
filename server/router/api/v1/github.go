@@ -17,33 +17,6 @@ import (
 	"net/http"
 )
 
-type TokenRequest struct {
-	Username string `json:"username"`
-	Token    string `json:"token"`
-}
-
-type GitHubCreateRepoRequest struct {
-	Name              string `json:"name"`
-	AutoInit          bool   `json:"auto_init"`
-	Private           bool   `json:"private"`
-	GitignoreTemplate string `json:"gitignore_template"`
-}
-
-type CreateRepoRequest struct {
-	Username string `json:"username"`
-	RepoName string `json:"repoName"`
-}
-
-type CreateRepoWithTemplateRequest struct {
-	Username string `json:"username"`
-	RepoName string `json:"repoName"`
-	Template string `json:"template"`
-}
-
-type GitHubErrorResponse struct {
-	Message string `json:"message"`
-}
-
 // https://docs.github.com/cn/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token
 // 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
 func LoginGithubWithToken(c *gin.Context) {
@@ -73,7 +46,7 @@ func LoginGithubWithToken(c *gin.Context) {
 	}
 }
 
-func RegisterWithGitHubToken(c *gin.Context) {
+func GitHubToken(c *gin.Context) {
 	tr := &TokenRequest{}
 	err := c.BindJSON(tr)
 	if err != nil {
@@ -94,8 +67,8 @@ func RegisterWithGitHubToken(c *gin.Context) {
 		return
 	}
 	//新增用户
-	db.DB.Create(&user)
-	c.JSON(200, gin.H{"msg": "注册成功"})
+	db.DB.Updates(user)
+	c.JSON(200, gin.H{"msg": "success"})
 }
 
 func CreateRepoWithTemplate(c *gin.Context) {
@@ -142,35 +115,4 @@ func CreateRepoWithTemplate(c *gin.Context) {
 	}
 
 	c.JSON(200, gin.H{"msg": "创建成功"})
-}
-
-func GetGitHubAuthReq(username, token string) *http.Request {
-	head := username + token
-	base64Head := util.EncodeBase64(head)
-	fmt.Println(base64Head)
-	req := &http.Request{}
-	req.Header.Set("Authorization", "Basic "+base64Head)
-	return req
-}
-
-func GetGitHubAuthReqWithToken(username, token string) *http.Request {
-	req, err := http.NewRequest("GET", "https://api.github.com/users/"+username, nil)
-	if err != nil {
-		logger.Logger.Error(err)
-	}
-	req.Header.Set("Authorization", "token "+token)
-	return req
-}
-
-func GetGitHubCreateRepoWithTemplateReq(token, name, tempOwner, tempName string) *http.Request {
-	body := bytes.NewBuffer([]byte(fmt.Sprintf(`{
-	"name": "%s"
-	}`, name)))
-	req, err := http.NewRequest("POST", "https://api.github.com/repos/"+tempOwner+"/"+tempName+"/generate", body)
-	if err != nil {
-		logger.Logger.Error(err)
-	}
-	req.Header.Set("Authorization", "token "+token)
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	return req
 }
