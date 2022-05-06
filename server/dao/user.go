@@ -6,7 +6,7 @@ import (
 )
 
 func FindUser(username string) bool {
-	user := &model.User{}
+	user := model.NewUser()
 	db.DB.Where("username = ?", username).First(&user)
 	if user.Username == "" {
 		return false
@@ -15,7 +15,7 @@ func FindUser(username string) bool {
 }
 
 func GetToken(username string) (string, error) {
-	user := &model.User{}
+	user := model.NewUser()
 	err := db.DB.Where("username = ?", username).First(&user).Error
 	if err != nil {
 		return "", err
@@ -23,7 +23,24 @@ func GetToken(username string) (string, error) {
 	return user.Token, nil
 }
 
-func Create(user *model.User) error {
+func CreateUser(user *model.User) error {
 	db.DB.Create(user)
 	return nil
+}
+
+func UpdateUser(user *model.User) error {
+	db.DB.Model(&user).Updates(user)
+	return nil
+}
+
+func GetUserByEmail(email string) *model.User {
+	user := model.NewUser()
+	db.DB.Where("email = ?", email).First(&user)
+	return user
+}
+
+func GetUserByUsername(username string) *model.User {
+	user := model.NewUser()
+	db.DB.Where("username = ?", username).First(&user)
+	return user
 }

@@ -63,12 +63,11 @@ func Deploy(c *gin.Context) {
 				c.JSON(500, gin.H{"msg": "error"})
 			}
 			imageID = docker.CreateImageWithDockerfile(request.Username, request.RepoName)
-			containerID, _ = docker.CreateAndStartContainer(request.Username, request.RepoName)
+			containerID, err = docker.CreateContainer(request.Username, request.RepoName)
+			err = docker.StartContainer(request.Username, request.RepoName)
 		}
 	} else {
 		lastCommit := gResp[0].Commit.Committer.Date
-		// update
-
 		// write db
 		project.LastCommit = lastCommit
 		err = dao.UpdateProject(project)
@@ -86,8 +85,8 @@ func Deploy(c *gin.Context) {
 			c.JSON(500, gin.H{"msg": "error"})
 		}
 		imageID = docker.CreateImageWithDockerfile(request.Username, request.RepoName)
-		containerID, _ = docker.CreateAndStartContainer(request.Username, request.RepoName)
-
+		containerID, err = docker.CreateContainer(request.Username, request.RepoName)
+		err = docker.StartContainer(request.Username, request.RepoName)
 	}
 	// write db lastDeploy
 	project.Address = host + "/" + project.Username + "/" + project.RepoName + "/"
@@ -111,6 +110,12 @@ func Deploy(c *gin.Context) {
 func GetProjectsByUsername(c *gin.Context) {
 	username := c.Query("username")
 	repoName := c.Query("repoName")
+	if username == "" {
+		c.JSON(400, gin.H{
+			"message": "invalid request",
+		})
+		return
+	}
 	if repoName != "" {
 		project, err := dao.GetProject(username, repoName)
 		if err != nil {

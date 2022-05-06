@@ -44,6 +44,22 @@ func CreateAndStartContainer(username, repoName string) (string, string) {
 	}
 	return cID, port
 }
+func CreateContainer(username, repoName string) (string, error) {
+	imageName := GetImageName(username, repoName)
+	// write to redis
+	err := dao.SetPort("", username, repoName)
+	if err != nil {
+		logger.Logger.Error(err)
+	}
+	resp, err := cli.ContainerCreate(ctx, &container.Config{
+		Image: imageName,
+	}, &container.HostConfig{}, nil, nil, username+"-"+repoName)
+	if err != nil {
+		logger.Logger.Error("image create:", err)
+	}
+	cID := resp.ID
+	return cID, nil
+}
 
 func StartContainer(username, repoName string) error {
 	cID, ok := GetContainerID(username, repoName)

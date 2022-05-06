@@ -10,6 +10,10 @@ type User struct {
 	*gorm.Model
 }
 
+func NewUser() *User {
+	return &User{Model: &gorm.Model{}}
+}
+
 func (user User) TableName() string {
 	return "users"
 }

@@ -1,19 +1,22 @@
 package router
 
 import (
+	"fmt"
 	"github.com/Octane0411/qoou/server/middleware"
 	v1 "github.com/Octane0411/qoou/server/router/api/v1"
 	"github.com/gin-gonic/gin"
+	"io"
+	"time"
 )
 
 func NewRouter() *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Logger())
 	r.Use(gin.Recovery())
-	r.Use(middleware.CORSMiddleware())
+	r.Use(middleware.CORS())
 
 	apiv1 := r.Group("/api/v1")
-
+	apiv1.Use(middleware.JWT())
 	{
 		apiv1.POST("/github_token", v1.GitHubToken)
 
@@ -28,6 +31,32 @@ func NewRouter() *gin.Engine {
 		apiv1.GET("/project/log", v1.GetLog)
 
 	}
+
+	authapi := r.Group("/api/auth")
+	{
+		authapi.POST("/login", v1.Login)
+		authapi.POST("/register", v1.Register)
+		authapi.POST("/captcha", v1.Captcha)
+	}
+
+	r.GET("/stream", func(c *gin.Context) {
+		chanStream := make(chan int, 10)
+		go func() {
+			defer close(chanStream)
+			for i := 0; i < 5; i++ {
+				chanStream <- i
+				time.Sleep(time.Second * 1)
+			}
+			fmt.Println("close")
+		}()
+		c.Stream(func(w io.Writer) bool {
+			if msg, ok := <-chanStream; ok {
+				c.SSEvent("message", msg)
+				return true
+			}
+			return false
+		})
+	})
 
 	return r
 }

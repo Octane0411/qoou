@@ -29,6 +29,7 @@ func SendEmail(Toers, Ccers, subject, body, name string) error {
 	serverPort = 465
 	fromEmail = "qoou_no_reply@yeah.net"
 	fromPasswd = "OHOPJTVNYUOBFJHH"
+
 	m = gomail.NewMessage()
 
 	if len(Toers) == 0 {

@@ -14,7 +14,7 @@ var RDB4Docker = redis.NewClient(&redis.Options{
 var RDB4Server = redis.NewClient(&redis.Options{
 	Addr:     "127.0.0.1:6378",
 	Password: "", // no password set
-	DB:       1,  // use default DB
+	DB:       1,
 })
 
 var Ctx = context.Background()

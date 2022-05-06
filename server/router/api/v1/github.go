@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/Octane0411/qoou/common/db"
 	"github.com/Octane0411/qoou/common/global"
 	"github.com/Octane0411/qoou/common/logger"
 	"github.com/Octane0411/qoou/server/dao"
@@ -56,18 +55,30 @@ func GitHubToken(c *gin.Context) {
 		return
 	}
 	//验证是否注册过
-	user := &model.User{
-		Username: tr.Username,
-		Token:    tr.Token,
-	}
-	ok := dao.FindUser(tr.Username)
-	if ok {
-		db.DB.Updates(user)
-		c.JSON(200, gin.H{"msg": "token已更新"})
+	user := model.NewUser()
+	user.Username = tr.Username
+	user.Token = tr.Token
+	userByUsername := dao.GetUserByUsername(user.Username)
+	if userByUsername.ID != 0 {
+		user.ID = userByUsername.ID
+		err := dao.UpdateUser(user)
+		if err != nil {
+			c.JSON(500, gin.H{
+				"msg": "更新失败",
+			})
+			return
+		}
+		c.JSON(200, gin.H{"msg": "github token已更新"})
 		return
 	}
 	//新增用户
-	db.DB.Updates(user)
+	err = dao.CreateUser(user)
+	if err != nil {
+		c.JSON(500, gin.H{
+			"msg": "新增失败",
+		})
+		return
+	}
 	c.JSON(200, gin.H{"msg": "success"})
 }
 
