@@ -8,6 +8,7 @@ import (
 
 var VerifyKey *rsa.PublicKey
 var SignKey *rsa.PrivateKey
+var expirationTime = 60 * 60 * 24
 
 func init() {
 	VerifyKey, _ = jwt.ParseRSAPublicKeyFromPEM([]byte(`
@@ -53,7 +54,7 @@ func CreateToken(username string) (string, error) {
 
 	t.Claims = &QoouCliams{
 		Username:       username,
-		ExpirationTime: time.Now().Add(time.Minute * time.Duration(1)),
+		ExpirationTime: time.Now().Add(time.Hour * time.Duration(24)),
 	}
 
 	return t.SignedString(SignKey)

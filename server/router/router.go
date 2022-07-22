@@ -1,7 +1,6 @@
 package router
 
 import (
-	"fmt"
 	"github.com/Octane0411/qoou/server/middleware"
 	v1 "github.com/Octane0411/qoou/server/router/api/v1"
 	"github.com/gin-gonic/gin"
@@ -47,15 +46,16 @@ func NewRouter() *gin.Engine {
 				chanStream <- i
 				time.Sleep(time.Second * 1)
 			}
-			fmt.Println("close")
 		}()
-		c.Stream(func(w io.Writer) bool {
-			if msg, ok := <-chanStream; ok {
-				c.SSEvent("message", msg)
-				return true
-			}
-			return false
-		})
+		go func(chanStream chan int) {
+			c.Stream(func(w io.Writer) bool {
+				if msg, ok := <-chanStream; ok {
+					c.SSEvent("message", msg)
+					return true
+				}
+				return false
+			})
+		}(chanStream)
 	})
 
 	return r

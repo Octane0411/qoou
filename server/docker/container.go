@@ -46,14 +46,25 @@ func CreateAndStartContainer(username, repoName string) (string, string) {
 }
 func CreateContainer(username, repoName string) (string, error) {
 	imageName := GetImageName(username, repoName)
+	freePort, err := util.GetFreePort()
+	if err != nil {
+		logger.Logger.Error(err)
+	}
+	port := strconv.Itoa(freePort)
+	logger.Logger.Info(port)
 	// write to redis
-	err := dao.SetPort("", username, repoName)
+	err = dao.SetPort(port, username, repoName)
 	if err != nil {
 		logger.Logger.Error(err)
 	}
 	resp, err := cli.ContainerCreate(ctx, &container.Config{
 		Image: imageName,
-	}, &container.HostConfig{}, nil, nil, username+"-"+repoName)
+	}, &container.HostConfig{
+		PortBindings: nat.PortMap{"8080/tcp": []nat.PortBinding{{
+			HostIP:   "0.0.0.0",
+			HostPort: port,
+		}}},
+	}, nil, nil, username+"-"+repoName)
 	if err != nil {
 		logger.Logger.Error("image create:", err)
 	}

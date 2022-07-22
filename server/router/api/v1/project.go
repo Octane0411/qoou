@@ -107,6 +107,97 @@ func Deploy(c *gin.Context) {
 	})
 }
 
+func Deploy2(c *gin.Context) {
+	// require: username, repoName
+	var request DeployRequest
+	var imageID, containerID string
+	err := c.BindJSON(&request)
+	if err != nil {
+		c.JSON(400, gin.H{
+			"message": "invalid request",
+		})
+		return
+	}
+	project, err := dao.GetProject(request.Username, request.RepoName)
+	if err != nil {
+		c.JSON(400, gin.H{
+			"message": "project doesn't exist",
+		})
+		return
+	}
+	// check commit
+	resp, err := Cli.Do(GetGitHubCommitsRequest(request.Username, request.RepoName, project.LastCommit))
+	if err != nil {
+		logger.Logger.Error(err)
+		c.JSON(400, gin.H{
+			"message": "failed to get commit",
+		})
+		return
+	}
+	b, _ := io.ReadAll(resp.Body)
+	gResp := GitHubCommitResponse{}
+	err = json.Unmarshal(b, &gResp)
+	if err != nil {
+		logger.Logger.Error(err)
+		c.JSON(500, gin.H{
+			"message": "GitHub request error",
+		})
+	}
+	if len(gResp) < 1 {
+		// no update
+		logger.Logger.Info("no update")
+		err = docker.StartContainer(request.Username, request.RepoName)
+		if err != nil {
+			err = docker.GenerateDockerfile(project)
+			if err != nil {
+				c.JSON(500, gin.H{"msg": "error"})
+			}
+			imageID = docker.CreateImageWithDockerfile(request.Username, request.RepoName)
+			containerID, err = docker.CreateContainer(request.Username, request.RepoName)
+			err = docker.StartContainer(request.Username, request.RepoName)
+		}
+	} else {
+		lastCommit := gResp[0].Commit.Committer.Date
+		// write db
+		project.LastCommit = lastCommit
+		err = dao.UpdateProject(project)
+		if err != nil {
+			logger.Logger.Error(err)
+			c.JSON(500, gin.H{
+				"message": "write db error",
+			})
+			return
+		}
+		// Download latest project
+		download.DownloadRepo(request.Username, request.RepoName)
+		err = docker.GenerateDockerfile(project)
+		if err != nil {
+			c.JSON(500, gin.H{"msg": "error"})
+		}
+		imageID = docker.CreateImageWithDockerfile(request.Username, request.RepoName)
+		containerID, err = docker.CreateContainer(request.Username, request.RepoName)
+		err = docker.StartContainer(request.Username, request.RepoName)
+	}
+	// write db lastDeploy
+	project.Address = host + "/" + project.Username + "/" + project.RepoName + "/"
+	project.LastRun = time.Now()
+	project.ImageID = imageID
+	project.ContainerID = containerID
+	project.Status = "running"
+	err = dao.UpdateProject(project)
+	if err != nil {
+		logger.Logger.Error(err)
+		c.JSON(500, gin.H{
+			"message": "write db error",
+		})
+		return
+	}
+	c.JSON(200, gin.H{
+		"message": "success deploy",
+	})
+
+}
+
 func GetProjectsByUsername(c *gin.Context) {
 	username := c.Query("username")
 	repoName := c.Query("repoName")

@@ -76,6 +76,7 @@ func CreateImageWithDockerfile(username, repoName string) string {
 	reader := bufio.NewReader(resp.Body)
 	for {
 		line, err := reader.ReadBytes('\n')
+		logger.Logger.Info(string(line))
 		if strings.EqualFold(string(line), "\n") {
 			continue
 		}
@@ -88,7 +89,7 @@ func CreateImageWithDockerfile(username, repoName string) string {
 		err = json.Unmarshal(line, imageBuildResponse)
 		if err == nil {
 			imageID = imageBuildResponse.Aux.ID
-			logger.Logger.Info("imageID:", imageID)
+			//logger.Logger.Info("imageID:", imageID)
 		}
 	}
 	//err = cli.ImageTag(ctx, imageID, username+"-"+repoName+":latest")

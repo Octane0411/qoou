@@ -32,12 +32,12 @@ func Register(c *gin.Context) {
 	captcha := json["captcha"].(string)
 	validCaptcha := service.ValidCaptcha(email1, captcha)
 	if !validCaptcha {
-		c.JSON(403, gin.H{"message": "验证码错误"})
+		c.JSON(200, gin.H{"message": "验证码错误"})
 		return
 	}
 	userByUsername := dao.GetUserByUsername(username)
-	if userByUsername != nil {
-		c.JSON(403, gin.H{"message": "用户名已存在"})
+	if userByUsername.Username != "" {
+		c.JSON(200, gin.H{"message": "用户名已存在"})
 		return
 	}
 	err := dao.CreateUser(&model.User{
@@ -65,12 +65,12 @@ func Login(c *gin.Context) {
 		user = dao.GetUserByUsername(usernameOrEmail)
 	}
 	if user == nil {
-		c.JSON(403, gin.H{"message": "用户名或邮箱不存在"})
+		c.JSON(200, gin.H{"message": "用户名或邮箱不存在"})
 		return
 	}
 	// TODO: 密码加密
 	if user.Password != password {
-		c.JSON(403, gin.H{"message": "密码错误"})
+		c.JSON(200, gin.H{"message": "密码错误"})
 		return
 	}
 	token, err := qoou_jwt.CreateToken(user.Username)
